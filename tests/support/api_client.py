@@ -20,7 +20,9 @@ class ApiClient:
     def get(self, path: str, **kwargs) -> requests.Response:
         return requests.get(f"{self.base_url}{path}", headers=self._headers(), **kwargs)
 
-    def post(self, path: str, json_body: dict | None = None, **kwargs) -> requests.Response:
+    def post(
+        self, path: str, json_body: dict | None = None, **kwargs
+    ) -> requests.Response:
         return requests.post(
             f"{self.base_url}{path}", headers=self._headers(), json=json_body, **kwargs
         )
@@ -30,6 +32,10 @@ class ApiClient:
             f"{self.base_url}{path}", headers=self._headers(), json=json_body, **kwargs
         )
 
-    def post_multipart(self, path: str, files: dict, data: dict | None = None) -> requests.Response:
+    def post_multipart(
+        self, path: str, files: dict, data: dict | None = None
+    ) -> requests.Response:
         headers = {"Authorization": f"Bearer {self.token}"}
-        return requests.post(f"{self.base_url}{path}", headers=headers, files=files, data=data)
+        return requests.post(
+            f"{self.base_url}{path}", headers=headers, files=files, data=data
+        )

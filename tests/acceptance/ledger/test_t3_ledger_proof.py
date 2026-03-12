@@ -18,13 +18,16 @@ from tests.support.helpers import compute_manifest_payload, sha256_hex
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.acceptance
 class TestT3LedgerProof:
     """T3 acceptance test suite."""
 
     def test_ledger_fields_present(self, issued_manifest: dict):
         """Precondition: ledger_entry_id and ledger_hash must be present."""
-        assert "ledger_entry_id" in issued_manifest, "ledger_entry_id missing from manifest"
+        assert "ledger_entry_id" in issued_manifest, (
+            "ledger_entry_id missing from manifest"
+        )
         assert "ledger_hash" in issued_manifest, "ledger_hash missing from manifest"
         assert len(issued_manifest["ledger_hash"]) == 64, (
             f"ledger_hash should be 64 hex chars, got {len(issued_manifest['ledger_hash'])}"

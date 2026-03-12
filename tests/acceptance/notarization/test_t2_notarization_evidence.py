@@ -31,6 +31,7 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def parse_s3_uri(uri: str) -> tuple[str, str]:
     """Parse s3://bucket/key into (bucket, key)."""
     assert uri.startswith("s3://"), f"Invalid S3 URI: {uri}"
@@ -73,6 +74,7 @@ def verify_s3_object(pointer: dict) -> None:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.acceptance
 class TestT2NotarizationEvidence:
@@ -132,11 +134,15 @@ class TestT2NotarizationEvidence:
             pytest.skip("RON video evidence check applies to RON only")
 
         assert "ron_session_id" in nota, "ron_session_id missing for RON notarization"
-        assert "ron_video_pointer" in nota, "ron_video_pointer missing for RON notarization"
+        assert "ron_video_pointer" in nota, (
+            "ron_video_pointer missing for RON notarization"
+        )
 
         pointer = nota["ron_video_pointer"]
         assert "s3_uri" in pointer, "ron_video_pointer.s3_uri is missing"
-        assert "checksum_sha256" in pointer, "ron_video_pointer.checksum_sha256 is missing"
+        assert "checksum_sha256" in pointer, (
+            "ron_video_pointer.checksum_sha256 is missing"
+        )
         assert "size_bytes" in pointer, "ron_video_pointer.size_bytes is missing"
 
         # Verify the actual S3 object if boto3 is available
@@ -156,7 +162,9 @@ class TestT2NotarizationEvidence:
 
         pointer = nota["scanned_pages_pointer"]
         assert "s3_uri" in pointer, "scanned_pages_pointer.s3_uri is missing"
-        assert "checksum_sha256" in pointer, "scanned_pages_pointer.checksum_sha256 is missing"
+        assert "checksum_sha256" in pointer, (
+            "scanned_pages_pointer.checksum_sha256 is missing"
+        )
 
         if os.getenv("VERIFY_S3_OBJECTS", "false").lower() == "true":
             verify_s3_object(pointer)

@@ -12,7 +12,9 @@ class Settings:
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     signing_backend: str = os.getenv("SIGNING_BACKEND", "db_pem")
     admin_approval_token: str = os.getenv("ADMIN_APPROVAL_TOKEN", "dev-approval-token")
-    approval_replay_window_seconds: int = int(os.getenv("APPROVAL_REPLAY_WINDOW_SECONDS", "0"))
+    approval_replay_window_seconds: int = int(
+        os.getenv("APPROVAL_REPLAY_WINDOW_SECONDS", "0")
+    )
 
 
 settings = Settings()

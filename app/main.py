@@ -63,14 +63,22 @@ def _hash_approval_token(token: str) -> str:
 
 
 def _canonical_payload(manifest: dict) -> bytes:
-    payload = {k: v for k, v in manifest.items() if k not in ("platform_signature", "ledger_entry_id", "ledger_hash")}
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    payload = {
+        k: v
+        for k, v in manifest.items()
+        if k not in ("platform_signature", "ledger_entry_id", "ledger_hash")
+    }
+    return json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode()
 
 
 def _get_provider(name: str):
     provider = SIGNING_PROVIDERS.get(name)
     if not provider:
-        raise HTTPException(status_code=500, detail=f"Unsupported signing backend: {name}")
+        raise HTTPException(
+            status_code=500, detail=f"Unsupported signing backend: {name}"
+        )
     return provider
 
 
@@ -148,11 +156,13 @@ async def _rotate_signing_key(
 async def _get_active_signing_key(db: AsyncSession) -> SigningKey:
     async def _query() -> SigningKey | None:
         result = await db.execute(
-            select(SigningKey).where(
+            select(SigningKey)
+            .where(
                 SigningKey.is_active.is_(True),
                 SigningKey.revoked_at.is_(None),
                 SigningKey.key_backend == settings.signing_backend,
-            ).order_by(SigningKey.created_at.desc())
+            )
+            .order_by(SigningKey.created_at.desc())
         )
         return result.scalars().first()
 
@@ -168,22 +178,30 @@ async def _get_active_signing_key(db: AsyncSession) -> SigningKey:
 async def _ensure_active_signing_key() -> None:
     async with SessionLocal() as db:
         result = await db.execute(
-            select(SigningKey).where(
+            select(SigningKey)
+            .where(
                 SigningKey.is_active.is_(True),
                 SigningKey.revoked_at.is_(None),
                 SigningKey.key_backend == settings.signing_backend,
-            ).order_by(SigningKey.created_at.desc())
+            )
+            .order_by(SigningKey.created_at.desc())
         )
         key = result.scalars().first()
         provider = _get_provider(settings.signing_backend)
         if key:
             if key.key_backend == "db_pem" and key.private_key_pem:
                 return
-            if key.key_backend == "mock_hsm" and isinstance(provider, MockHsmSigningProvider) and provider.has_key(key.key_ref):
+            if (
+                key.key_backend == "mock_hsm"
+                and isinstance(provider, MockHsmSigningProvider)
+                and provider.has_key(key.key_ref)
+            ):
                 return
             key.is_active = False
             key.revoked_at = datetime.now(timezone.utc)
-            key.revoked_reason = "startup-rotation: invalid or missing key handle/material"
+            key.revoked_reason = (
+                "startup-rotation: invalid or missing key handle/material"
+            )
 
         await _create_signing_key_record(db, settings.signing_backend)
         await db.commit()
@@ -200,8 +218,19 @@ def _render_pdf(bond_id: uuid.UUID) -> bytes:
     return body + f"\n%BOND:{bond_id}".encode()
 
 
-def _append_status(history: list[dict], status: str, actor_id: uuid.UUID, actor_role: str, rationale: str | None = None) -> list[dict]:
-    item = {"status": status, "actor_id": str(actor_id), "actor_role": actor_role, "timestamp": _utc_iso()}
+def _append_status(
+    history: list[dict],
+    status: str,
+    actor_id: uuid.UUID,
+    actor_role: str,
+    rationale: str | None = None,
+) -> list[dict]:
+    item = {
+        "status": status,
+        "actor_id": str(actor_id),
+        "actor_role": actor_role,
+        "timestamp": _utc_iso(),
+    }
     if rationale:
         item["rationale"] = rationale
     return [*history, item]
@@ -248,7 +277,9 @@ def _build_manifest_json(
     }
     payload = _canonical_payload(manifest)
     provider = _get_provider(signing_key.key_backend)
-    signature_bytes = provider.sign(payload, signing_key.private_key_pem, signing_key.key_ref)
+    signature_bytes = provider.sign(
+        payload, signing_key.private_key_pem, signing_key.key_ref
+    )
     manifest["platform_signature"] = {
         "algorithm": "ECDSA-P256",
         "key_id": signing_key.key_id,
@@ -404,7 +435,9 @@ async def _execute_revoke_signing_key(
     key.revoked_at = datetime.now(timezone.utc)
     key.revoked_reason = reason
     replacement = None
-    if create_replacement or (key.key_backend == settings.signing_backend and was_active):
+    if create_replacement or (
+        key.key_backend == settings.signing_backend and was_active
+    ):
         replacement = await _create_signing_key_record(db, key.key_backend)
     db.add(
         SigningKeyEvent(
@@ -448,7 +481,9 @@ async def list_signing_key_events(
     db: AsyncSession = Depends(get_db),
     _: CurrentUser = Depends(require_roles("admin")),
 ) -> dict:
-    result = await db.execute(select(SigningKeyEvent).order_by(SigningKeyEvent.created_at.desc()))
+    result = await db.execute(
+        select(SigningKeyEvent).order_by(SigningKeyEvent.created_at.desc())
+    )
     events = result.scalars().all()
     return {
         "items": [
@@ -472,7 +507,11 @@ async def list_signing_key_operation_requests(
     db: AsyncSession = Depends(get_db),
     _: CurrentUser = Depends(require_roles("admin")),
 ) -> dict:
-    result = await db.execute(select(SigningKeyOperationRequest).order_by(SigningKeyOperationRequest.created_at.desc()))
+    result = await db.execute(
+        select(SigningKeyOperationRequest).order_by(
+            SigningKeyOperationRequest.created_at.desc()
+        )
+    )
     requests = result.scalars().all()
     return {"items": [_op_request_out(r) for r in requests]}
 
@@ -502,7 +541,10 @@ async def rotate_signing_key(
     db.add(req)
     await db.commit()
     await db.refresh(req)
-    return JSONResponse(status_code=202, content={"status": "pending_approval", "request": _op_request_out(req)})
+    return JSONResponse(
+        status_code=202,
+        content={"status": "pending_approval", "request": _op_request_out(req)},
+    )
 
 
 @app.post("/api/v1/admin/signing-keys/{key_id}/revoke")
@@ -545,19 +587,31 @@ async def approve_signing_key_operation_request(
     approval_token = _validate_admin_approval(data)
     approval_token_hash = _hash_approval_token(approval_token)
 
-    result = await db.execute(select(SigningKeyOperationRequest).where(SigningKeyOperationRequest.id == request_id))
+    result = await db.execute(
+        select(SigningKeyOperationRequest).where(
+            SigningKeyOperationRequest.id == request_id
+        )
+    )
     req = result.scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=404, detail="Operation request not found")
     if req.status != "pending":
-        raise HTTPException(status_code=409, detail=f"Operation request already {req.status}")
+        raise HTTPException(
+            status_code=409, detail=f"Operation request already {req.status}"
+        )
     if req.requested_by == user.user_id:
-        raise HTTPException(status_code=409, detail="Requester and approver must be different admins")
+        raise HTTPException(
+            status_code=409, detail="Requester and approver must be different admins"
+        )
     if req.approval_token_hash != approval_token_hash:
-        raise HTTPException(status_code=403, detail="Approval token does not match request")
+        raise HTTPException(
+            status_code=403, detail="Approval token does not match request"
+        )
 
     if settings.approval_replay_window_seconds > 0:
-        replay_window_start = datetime.now(timezone.utc) - timedelta(seconds=settings.approval_replay_window_seconds)
+        replay_window_start = datetime.now(timezone.utc) - timedelta(
+            seconds=settings.approval_replay_window_seconds
+        )
         replay_result = await db.execute(
             select(SigningKeyOperationRequest).where(
                 SigningKeyOperationRequest.status == "executed",
@@ -592,7 +646,9 @@ async def approve_signing_key_operation_request(
         execution_result = {"status": "rotated", "new_key": _signing_key_out(new_key)}
     elif req.operation_type == "revoke":
         if not req.target_key_id:
-            raise HTTPException(status_code=400, detail="Revoke request missing target_key_id")
+            raise HTTPException(
+                status_code=400, detail="Revoke request missing target_key_id"
+            )
         execution_result = await _execute_revoke_signing_key(
             db=db,
             key_id=req.target_key_id,
@@ -603,7 +659,9 @@ async def approve_signing_key_operation_request(
             approval_token=approval_token,
         )
     else:
-        raise HTTPException(status_code=400, detail=f"Unsupported operation_type: {req.operation_type}")
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported operation_type: {req.operation_type}"
+        )
 
     req.status = "executed"
     req.approved_by = user.user_id
@@ -611,7 +669,11 @@ async def approve_signing_key_operation_request(
     req.execution_result = execution_result
     await db.commit()
     await db.refresh(req)
-    return {"status": "executed", "request": _op_request_out(req), "execution_result": execution_result}
+    return {
+        "status": "executed",
+        "request": _op_request_out(req),
+        "execution_result": execution_result,
+    }
 
 
 @app.post("/api/v1/bonds")
@@ -650,9 +712,13 @@ async def submit_bond_request(
 ) -> JSONResponse:
     bond = await _get_bond_or_404(db, bond_id)
     if user.user_id != bond.broker_id:
-        raise HTTPException(status_code=403, detail="Cannot submit another broker's bond")
+        raise HTTPException(
+            status_code=403, detail="Cannot submit another broker's bond"
+        )
     if bond.status != "draft":
-        raise HTTPException(status_code=409, detail="Bond request is not in draft status")
+        raise HTTPException(
+            status_code=409, detail="Bond request is not in draft status"
+        )
 
     if bond.penal_sum != bond.contract_amount:
         bond.status = "review_required"
@@ -698,7 +764,9 @@ async def submit_bond_request(
 async def get_bond(
     bond_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: CurrentUser = Depends(require_roles("broker", "underwriter", "legal", "admin")),
+    user: CurrentUser = Depends(
+        require_roles("broker", "underwriter", "legal", "admin")
+    ),
 ) -> dict:
     bond = await _get_bond_or_404(db, bond_id)
     if not _can_view_bond(user, bond):
@@ -711,7 +779,9 @@ async def get_bond(
 async def download_bond_pdf(
     bond_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: CurrentUser = Depends(require_roles("broker", "underwriter", "legal", "admin")),
+    user: CurrentUser = Depends(
+        require_roles("broker", "underwriter", "legal", "admin")
+    ),
 ) -> Response:
     bond = await _get_bond_or_404(db, bond_id)
     if not _can_view_bond(user, bond):
@@ -725,7 +795,9 @@ async def download_bond_pdf(
 async def get_manifest(
     manifest_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: CurrentUser = Depends(require_roles("broker", "underwriter", "legal", "admin")),
+    user: CurrentUser = Depends(
+        require_roles("broker", "underwriter", "legal", "admin")
+    ),
 ) -> dict:
     result = await db.execute(select(Manifest).where(Manifest.id == manifest_id))
     manifest = result.scalar_one_or_none()
@@ -741,7 +813,9 @@ async def get_manifest(
 async def verify_manifest(
     manifest_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: CurrentUser = Depends(require_roles("broker", "underwriter", "legal", "admin")),
+    user: CurrentUser = Depends(
+        require_roles("broker", "underwriter", "legal", "admin")
+    ),
 ) -> JSONResponse:
     result = await db.execute(select(Manifest).where(Manifest.id == manifest_id))
     manifest = result.scalar_one_or_none()
@@ -749,12 +823,19 @@ async def verify_manifest(
         raise HTTPException(status_code=404, detail="Manifest not found")
     bond = await _get_bond_or_404(db, manifest.bond_request_id)
     if not _can_view_bond(user, bond):
-        raise HTTPException(status_code=403, detail="Not allowed to verify this manifest")
+        raise HTTPException(
+            status_code=403, detail="Not allowed to verify this manifest"
+        )
 
     manifest_json = manifest.manifest_json
     checks = []
-    pdf_hash_ok = bond.bond_pdf is not None and _sha256_hex(bond.bond_pdf) == manifest_json["document_hash"]
-    checks.append({"check": "document_hash_match", "result": "pass" if pdf_hash_ok else "fail"})
+    pdf_hash_ok = (
+        bond.bond_pdf is not None
+        and _sha256_hex(bond.bond_pdf) == manifest_json["document_hash"]
+    )
+    checks.append(
+        {"check": "document_hash_match", "result": "pass" if pdf_hash_ok else "fail"}
+    )
     try:
         jsonschema.Draft202012Validator(MANIFEST_SCHEMA).validate(manifest_json)
         checks.append({"check": "schema_valid", "result": "pass"})
@@ -766,7 +847,9 @@ async def verify_manifest(
         key_id = sig_block.get("key_id")
         trusted_key = None
         if key_id:
-            trusted_result = await db.execute(select(SigningKey).where(SigningKey.key_id == key_id))
+            trusted_result = await db.execute(
+                select(SigningKey).where(SigningKey.key_id == key_id)
+            )
             trusted_key = trusted_result.scalar_one_or_none()
         if trusted_key is None:
             raise ValueError("Trusted signing key not found")
@@ -778,7 +861,9 @@ async def verify_manifest(
     checks.append(
         {
             "check": "ledger_hash_match",
-            "result": "pass" if computed_ledger_hash == manifest_json["ledger_hash"] else "fail",
+            "result": "pass"
+            if computed_ledger_hash == manifest_json["ledger_hash"]
+            else "fail",
         }
     )
     checks.append({"check": "ledger_timestamp_valid", "result": "pass"})
@@ -802,14 +887,19 @@ async def generate_audit_bundle(
     result = await db.execute(select(Manifest).where(Manifest.id == manifest_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Manifest not found")
-    return JSONResponse(status_code=202, content={"manifest_id": str(manifest_id), "status": "generating"})
+    return JSONResponse(
+        status_code=202,
+        content={"manifest_id": str(manifest_id), "status": "generating"},
+    )
 
 
 @app.get("/api/v1/audit-bundles/{manifest_id}")
 async def download_audit_bundle(
     manifest_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: CurrentUser = Depends(require_roles("broker", "underwriter", "legal", "admin")),
+    user: CurrentUser = Depends(
+        require_roles("broker", "underwriter", "legal", "admin")
+    ),
 ) -> Response:
     result = await db.execute(select(Manifest).where(Manifest.id == manifest_id))
     manifest = result.scalar_one_or_none()
@@ -826,8 +916,14 @@ async def download_audit_bundle(
     with zipfile.ZipFile(data, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("bond.pdf", bond.bond_pdf)
         zf.writestr("manifest.json", json.dumps(manifest_json))
-        zf.writestr("notarization_evidence.json", json.dumps(manifest_json.get("notarization_meta", {})))
-        zf.writestr("kyc_pointer.json", json.dumps(manifest_json["principal_signer"]["kyc_pointer"]))
+        zf.writestr(
+            "notarization_evidence.json",
+            json.dumps(manifest_json.get("notarization_meta", {})),
+        )
+        zf.writestr(
+            "kyc_pointer.json",
+            json.dumps(manifest_json["principal_signer"]["kyc_pointer"]),
+        )
         zf.writestr(
             "ledger_proof.json",
             json.dumps(
@@ -855,10 +951,23 @@ async def download_audit_bundle(
         zf.writestr("legal_memo.pdf", legal_memo)
         zf.writestr(
             "clause_lineage.json",
-            json.dumps([{"clause_version_id": cid} for cid in manifest_json["clause_version_ids"]]),
+            json.dumps(
+                [
+                    {"clause_version_id": cid}
+                    for cid in manifest_json["clause_version_ids"]
+                ]
+            ),
         )
         zf.writestr(
             "rule_evaluation_log.json",
-            json.dumps([{"rule_id": "RCW_39_08_penal_sum", "result": "pass", "citation": "RCW 39.08.010(1)"}]),
+            json.dumps(
+                [
+                    {
+                        "rule_id": "RCW_39_08_penal_sum",
+                        "result": "pass",
+                        "citation": "RCW 39.08.010(1)",
+                    }
+                ]
+            ),
         )
     return Response(content=data.getvalue(), media_type="application/zip")

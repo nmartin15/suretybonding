@@ -17,7 +17,9 @@ def _utcnow() -> datetime:
 class BondRequest(Base):
     __tablename__ = "bond_requests"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     principal_name: Mapped[str] = mapped_column(String(255))
     principal_ubi_number: Mapped[str] = mapped_column(String(64))
     contractor_registration_number: Mapped[str] = mapped_column(String(64))
@@ -33,16 +35,24 @@ class BondRequest(Base):
     status: Mapped[str] = mapped_column(String(32), default="draft", index=True)
     status_history: Mapped[list[dict]] = mapped_column(JSONB, default=list)
     bond_pdf: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
-    manifest: Mapped["Manifest | None"] = relationship(back_populates="bond", uselist=False)
+    manifest: Mapped["Manifest | None"] = relationship(
+        back_populates="bond", uselist=False
+    )
 
 
 class Manifest(Base):
     __tablename__ = "manifests"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     bond_request_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("bond_requests.id", ondelete="CASCADE"),
@@ -53,8 +63,12 @@ class Manifest(Base):
     ledger_entry_id: Mapped[str] = mapped_column(String(255))
     ledger_hash: Mapped[str] = mapped_column(String(64))
     manifest_json: Mapped[dict] = mapped_column(JSONB)
-    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
 
     bond: Mapped[BondRequest] = relationship(back_populates="manifest")
 
@@ -62,7 +76,9 @@ class Manifest(Base):
 class SigningKey(Base):
     __tablename__ = "signing_keys"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     key_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     key_backend: Mapped[str] = mapped_column(String(32), default="db_pem")
     key_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -71,15 +87,21 @@ class SigningKey(Base):
     not_before: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     not_after: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     is_active: Mapped[bool] = mapped_column(default=True, index=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     revoked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
 
 
 class SigningKeyEvent(Base):
     __tablename__ = "signing_key_events"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     action: Mapped[str] = mapped_column(String(32), index=True)
     actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     reason: Mapped[str] = mapped_column(Text)
@@ -87,13 +109,17 @@ class SigningKeyEvent(Base):
     new_key_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     is_emergency: Mapped[bool] = mapped_column(default=False)
     approval_token_hash: Mapped[str] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
 
 
 class SigningKeyOperationRequest(Base):
     __tablename__ = "signing_key_operation_requests"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     operation_type: Mapped[str] = mapped_column(String(32), index=True)
     target_key_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     backend: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -102,8 +128,14 @@ class SigningKeyOperationRequest(Base):
     create_replacement: Mapped[bool] = mapped_column(default=False)
     approval_token_hash: Mapped[str] = mapped_column(String(64))
     requested_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
-    approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     execution_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
-    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

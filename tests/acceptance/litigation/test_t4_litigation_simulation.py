@@ -37,6 +37,7 @@ REQUIRED_BUNDLE_FILES = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def trigger_and_download_bundle(
     client: ApiClient, manifest_id: str
 ) -> tuple[bytes, float]:
@@ -79,6 +80,7 @@ def extract_bundle(zip_bytes: bytes) -> dict[str, bytes]:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.acceptance
 class TestT4LitigationSimulation:
     """T4 acceptance test suite — subpoena drill."""
@@ -93,7 +95,9 @@ class TestT4LitigationSimulation:
         zip_bytes, elapsed = trigger_and_download_bundle(admin_client, manifest_id)
 
         # Verify it's a valid ZIP
-        assert zipfile.is_zipfile(io.BytesIO(zip_bytes)), "Downloaded file is not a valid ZIP"
+        assert zipfile.is_zipfile(io.BytesIO(zip_bytes)), (
+            "Downloaded file is not a valid ZIP"
+        )
 
         files = extract_bundle(zip_bytes)
 
@@ -146,9 +150,8 @@ class TestT4LitigationSimulation:
         validator = jsonschema.Draft202012Validator(manifest_schema)
         errors = sorted(validator.iter_errors(manifest), key=lambda e: list(e.path))
 
-        assert not errors, (
-            "Bundled manifest failed schema validation:\n"
-            + "\n".join(f"  - {'.'.join(str(p) for p in e.path)}: {e.message}" for e in errors[:10])
+        assert not errors, "Bundled manifest failed schema validation:\n" + "\n".join(
+            f"  - {'.'.join(str(p) for p in e.path)}: {e.message}" for e in errors[:10]
         )
 
     def test_bundle_notarization_evidence(self, bundle_data: tuple):
@@ -168,9 +171,9 @@ class TestT4LitigationSimulation:
 
         # Verify the notarization evidence is consistent with the manifest
         manifest_nota = manifest.get("notarization_meta", {})
-        assert nota_evidence.get("notarization_type") == manifest_nota.get("notarization_type"), (
-            "Notarization type mismatch between bundle evidence and manifest"
-        )
+        assert nota_evidence.get("notarization_type") == manifest_nota.get(
+            "notarization_type"
+        ), "Notarization type mismatch between bundle evidence and manifest"
 
     def test_bundle_ledger_proof(self, bundle_data: tuple):
         """Step 6 (T3 subset): ledger proof is present and consistent."""
@@ -201,7 +204,14 @@ class TestT4LitigationSimulation:
         assert "verification_id" in kyc, "kyc_pointer.json missing verification_id"
 
         # Ensure no PII fields leaked into the KYC pointer
-        pii_fields = {"ssn", "social_security", "date_of_birth", "dob", "address", "phone"}
+        pii_fields = {
+            "ssn",
+            "social_security",
+            "date_of_birth",
+            "dob",
+            "address",
+            "phone",
+        }
         leaked = pii_fields & set(kyc.keys())
         assert not leaked, f"KYC pointer contains PII fields: {leaked}"
 
@@ -215,7 +225,9 @@ class TestT4LitigationSimulation:
             f"Legal memo PDF appears empty or trivially small ({len(memo_bytes)} bytes)"
         )
         # Verify it starts with PDF magic bytes
-        assert memo_bytes[:5] == b"%PDF-", "legal_memo.pdf does not appear to be a valid PDF"
+        assert memo_bytes[:5] == b"%PDF-", (
+            "legal_memo.pdf does not appear to be a valid PDF"
+        )
 
     def test_bundle_clause_lineage(self, bundle_data: tuple):
         """Clause lineage file is present and references manifest clause IDs."""

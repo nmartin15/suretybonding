@@ -20,6 +20,7 @@ from tests.support.config import (
 )
 from tests.support.helpers import fetch_manifest
 
+
 @pytest.fixture(scope="session")
 def admin_client() -> ApiClient:
     return ApiClient(base_url=BASE_URL, token=ADMIN_TOKEN)
@@ -81,11 +82,15 @@ def issued_bond(broker_client: ApiClient) -> dict:
     """
     bond_id = os.getenv("ISSUED_BOND_ID")
     if not bond_id:
-        pytest.skip("ISSUED_BOND_ID not set — no pre-issued bond available for testing.")
+        pytest.skip(
+            "ISSUED_BOND_ID not set — no pre-issued bond available for testing."
+        )
     resp = broker_client.get(f"/api/v1/bonds/{bond_id}")
     resp.raise_for_status()
     bond = resp.json()
-    assert bond["status"] == "issued", f"Expected issued bond, got status={bond['status']}"
+    assert bond["status"] == "issued", (
+        f"Expected issued bond, got status={bond['status']}"
+    )
     return bond
 
 

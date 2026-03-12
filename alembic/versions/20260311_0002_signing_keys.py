@@ -27,13 +27,19 @@ def upgrade() -> None:
         sa.Column("certificate_pem", sa.Text(), nullable=False),
         sa.Column("not_before", sa.DateTime(timezone=True), nullable=False),
         sa.Column("not_after", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column(
+            "is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")
+        ),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_signing_keys_is_active"), "signing_keys", ["is_active"], unique=False)
-    op.create_index(op.f("ix_signing_keys_key_id"), "signing_keys", ["key_id"], unique=True)
+    op.create_index(
+        op.f("ix_signing_keys_is_active"), "signing_keys", ["is_active"], unique=False
+    )
+    op.create_index(
+        op.f("ix_signing_keys_key_id"), "signing_keys", ["key_id"], unique=True
+    )
 
 
 def downgrade() -> None:

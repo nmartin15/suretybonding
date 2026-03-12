@@ -14,8 +14,7 @@ pytestmark = pytest.mark.unit
 
 def test_sha256_hex_known_value():
     assert sha256_hex(b"abc") == (
-        "ba7816bf8f01cfea414140de5dae2223"
-        "b00361a396177a9cb410ff61f20015ad"
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     )
 
 

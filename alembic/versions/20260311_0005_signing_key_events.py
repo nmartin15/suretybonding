@@ -27,18 +27,42 @@ def upgrade() -> None:
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("old_key_id", sa.String(length=128), nullable=True),
         sa.Column("new_key_id", sa.String(length=128), nullable=True),
-        sa.Column("is_emergency", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "is_emergency",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+        ),
         sa.Column("approval_token_hash", sa.String(length=64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_signing_key_events_action"), "signing_key_events", ["action"], unique=False)
-    op.create_index(op.f("ix_signing_key_events_actor_id"), "signing_key_events", ["actor_id"], unique=False)
-    op.create_index(op.f("ix_signing_key_events_created_at"), "signing_key_events", ["created_at"], unique=False)
+    op.create_index(
+        op.f("ix_signing_key_events_action"),
+        "signing_key_events",
+        ["action"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_signing_key_events_actor_id"),
+        "signing_key_events",
+        ["actor_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_signing_key_events_created_at"),
+        "signing_key_events",
+        ["created_at"],
+        unique=False,
+    )
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_signing_key_events_created_at"), table_name="signing_key_events")
-    op.drop_index(op.f("ix_signing_key_events_actor_id"), table_name="signing_key_events")
+    op.drop_index(
+        op.f("ix_signing_key_events_created_at"), table_name="signing_key_events"
+    )
+    op.drop_index(
+        op.f("ix_signing_key_events_actor_id"), table_name="signing_key_events"
+    )
     op.drop_index(op.f("ix_signing_key_events_action"), table_name="signing_key_events")
     op.drop_table("signing_key_events")

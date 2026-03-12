@@ -18,12 +18,23 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("signing_keys", sa.Column("key_backend", sa.String(length=32), nullable=False, server_default="db_pem"))
-    op.add_column("signing_keys", sa.Column("key_ref", sa.String(length=255), nullable=True))
-    op.alter_column("signing_keys", "private_key_pem", existing_type=sa.Text(), nullable=True)
+    op.add_column(
+        "signing_keys",
+        sa.Column(
+            "key_backend", sa.String(length=32), nullable=False, server_default="db_pem"
+        ),
+    )
+    op.add_column(
+        "signing_keys", sa.Column("key_ref", sa.String(length=255), nullable=True)
+    )
+    op.alter_column(
+        "signing_keys", "private_key_pem", existing_type=sa.Text(), nullable=True
+    )
 
 
 def downgrade() -> None:
-    op.alter_column("signing_keys", "private_key_pem", existing_type=sa.Text(), nullable=False)
+    op.alter_column(
+        "signing_keys", "private_key_pem", existing_type=sa.Text(), nullable=False
+    )
     op.drop_column("signing_keys", "key_ref")
     op.drop_column("signing_keys", "key_backend")

@@ -48,10 +48,14 @@ class DbPemSigningProvider:
             not_after=not_after,
         )
 
-    def sign(self, payload: bytes, private_key_pem: str | None, key_ref: str | None = None) -> bytes:
+    def sign(
+        self, payload: bytes, private_key_pem: str | None, key_ref: str | None = None
+    ) -> bytes:
         if not private_key_pem:
             raise ValueError("Missing PEM key material for db_pem signing backend")
-        private_key = serialization.load_pem_private_key(private_key_pem.encode("utf-8"), password=None)
+        private_key = serialization.load_pem_private_key(
+            private_key_pem.encode("utf-8"), password=None
+        )
         return private_key.sign(payload, ec.ECDSA(hashes.SHA256()))
 
 
@@ -78,7 +82,9 @@ class MockHsmSigningProvider:
             not_after=not_after,
         )
 
-    def sign(self, payload: bytes, private_key_pem: str | None, key_ref: str | None = None) -> bytes:
+    def sign(
+        self, payload: bytes, private_key_pem: str | None, key_ref: str | None = None
+    ) -> bytes:
         if not key_ref:
             raise ValueError("Missing key_ref for mock_hsm signing")
         private_key = self._keys.get(key_ref)
@@ -102,8 +108,12 @@ def _self_signed_cert(
             x509.Name(
                 [
                     x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "SuretyBonding Dev CA"),
-                    x509.NameAttribute(NameOID.COMMON_NAME, "SuretyBonding Active Signing Cert"),
+                    x509.NameAttribute(
+                        NameOID.ORGANIZATION_NAME, "SuretyBonding Dev CA"
+                    ),
+                    x509.NameAttribute(
+                        NameOID.COMMON_NAME, "SuretyBonding Active Signing Cert"
+                    ),
                 ]
             )
         )
@@ -111,8 +121,12 @@ def _self_signed_cert(
             x509.Name(
                 [
                     x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "SuretyBonding Dev CA"),
-                    x509.NameAttribute(NameOID.COMMON_NAME, "SuretyBonding Active Signing Cert"),
+                    x509.NameAttribute(
+                        NameOID.ORGANIZATION_NAME, "SuretyBonding Dev CA"
+                    ),
+                    x509.NameAttribute(
+                        NameOID.COMMON_NAME, "SuretyBonding Active Signing Cert"
+                    ),
                 ]
             )
         )

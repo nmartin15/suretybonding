@@ -10,7 +10,9 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
 
 def make_token(role: str, user_id: str) -> str:
-    return jwt.encode({"sub": user_id, "role": role}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(
+        {"sub": user_id, "role": role}, JWT_SECRET, algorithm=JWT_ALGORITHM
+    )
 
 
 ADMIN_TOKEN = os.getenv(
@@ -32,7 +34,9 @@ UNDERWRITER_TOKEN = os.getenv(
 
 # Timeouts aligned with PRD NFR Section 9.3
 POLL_INTERVAL_SECONDS = 5
-AUTO_ISSUE_TIMEOUT_SECONDS = int(os.getenv("AUTO_ISSUE_TIMEOUT", "600"))  # 10 min for tests
+AUTO_ISSUE_TIMEOUT_SECONDS = int(
+    os.getenv("AUTO_ISSUE_TIMEOUT", "600")
+)  # 10 min for tests
 AUDIT_BUNDLE_TIMEOUT_SECONDS = 300  # 5 min per PRD success metric
 
 # This file lives under tests/support/, so parent.parent.parent is repo root.

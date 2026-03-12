@@ -24,6 +24,7 @@ from tests.support.helpers import poll_bond_status
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.acceptance
 class TestT5AutoIssuePolicyGate:
     """T5 acceptance test suite — end-to-end auto-issue."""
@@ -78,17 +79,14 @@ class TestT5AutoIssuePolicyGate:
         history = auto_issued_bond.get("status_history", [])
         human_review_statuses = {"review_required", "approved", "info_requested"}
         review_entries = [
-            entry for entry in history
-            if entry.get("status") in human_review_statuses
+            entry for entry in history if entry.get("status") in human_review_statuses
         ]
         assert not review_entries, (
             "Bond required human review despite pre-approved clauses.\n"
             f"Review entries: {json.dumps(review_entries, indent=2)}"
         )
 
-    def test_manifest_created(
-        self, admin_client: ApiClient, auto_issued_bond: dict
-    ):
+    def test_manifest_created(self, admin_client: ApiClient, auto_issued_bond: dict):
         """Step 5: Manifest must exist for the issued bond."""
         if auto_issued_bond["status"] != "issued":
             pytest.skip("Bond did not auto-issue")
@@ -125,16 +123,18 @@ class TestT5AutoIssuePolicyGate:
 
         # Verify specific checks passed
         checks_by_name = {c["check"]: c for c in result["checks"]}
-        for check_name in ["document_hash_match", "schema_valid", "platform_signature_valid"]:
+        for check_name in [
+            "document_hash_match",
+            "schema_valid",
+            "platform_signature_valid",
+        ]:
             check = checks_by_name.get(check_name)
             assert check is not None, f"Missing verification check: {check_name}"
             assert check["result"] == "pass", (
                 f"Check {check_name} failed: {check.get('detail')}"
             )
 
-    def test_audit_bundle_exists(
-        self, admin_client: ApiClient, auto_issued_bond: dict
-    ):
+    def test_audit_bundle_exists(self, admin_client: ApiClient, auto_issued_bond: dict):
         """Audit bundle must be downloadable for the issued bond."""
         if auto_issued_bond["status"] != "issued":
             pytest.skip("Bond did not auto-issue")
@@ -152,9 +152,7 @@ class TestT5AutoIssuePolicyGate:
         )
         assert len(resp.content) > 0, "Audit bundle is empty"
 
-    def test_ledger_proof_valid(
-        self, admin_client: ApiClient, auto_issued_bond: dict
-    ):
+    def test_ledger_proof_valid(self, admin_client: ApiClient, auto_issued_bond: dict):
         """Step 6 (T3 subset): Ledger proof must be valid."""
         if auto_issued_bond["status"] != "issued":
             pytest.skip("Bond did not auto-issue")

@@ -38,6 +38,7 @@ except ImportError:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.acceptance
 class TestT1ManifestValidation:
     """T1 acceptance test suite."""
@@ -78,16 +79,16 @@ class TestT1ManifestValidation:
         )
 
     @pytest.mark.skipif(not HAS_CRYPTO, reason="cryptography library not installed")
-    def test_platform_signature_valid(
-        self, admin_client: ApiClient, issued_bond: dict
-    ):
+    def test_platform_signature_valid(self, admin_client: ApiClient, issued_bond: dict):
         """Steps 4-5: Verify platform_signature against the manifest payload."""
         manifest_id = issued_bond["manifest_id"]
         manifest = fetch_manifest(admin_client, manifest_id)
 
         sig_block = manifest["platform_signature"]
         assert "signature" in sig_block, "platform_signature.signature is missing"
-        assert "certificate_chain" in sig_block, "platform_signature.certificate_chain is missing"
+        assert "certificate_chain" in sig_block, (
+            "platform_signature.certificate_chain is missing"
+        )
         assert len(sig_block["certificate_chain"]) >= 1, "Certificate chain is empty"
 
         # Load the signing certificate (first in chain)
@@ -96,6 +97,7 @@ class TestT1ManifestValidation:
 
         # Decode signature
         import base64
+
         signature_bytes = base64.b64decode(sig_block["signature"])
 
         # Compute the payload that was signed
@@ -163,9 +165,7 @@ class TestT1ManifestValidation:
                         child.signature_hash_algorithm,
                     )
             except Exception as e:
-                pytest.fail(
-                    f"Certificate chain broken at index {i} -> {i+1}: {e}"
-                )
+                pytest.fail(f"Certificate chain broken at index {i} -> {i + 1}: {e}")
 
         # The last certificate should be self-signed (root CA) or match a
         # trusted root. For now, verify self-signed.
