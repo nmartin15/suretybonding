@@ -8,7 +8,7 @@ class Settings:
         "DATABASE_URL",
         "postgresql+asyncpg://ebonding:password@localhost:5432/ebonding",
     )
-    jwt_secret: str = os.getenv("JWT_SECRET", "dev-secret")
+    jwt_secret: str = os.getenv("JWT_SECRET", "dev-secret-32-byte-minimum-secret-key")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     signing_backend: str = os.getenv("SIGNING_BACKEND", "db_pem")
     admin_approval_token: str = os.getenv("ADMIN_APPROVAL_TOKEN", "dev-approval-token")

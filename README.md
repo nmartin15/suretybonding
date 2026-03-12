@@ -47,14 +47,19 @@ cp .env.example .env
 #   KYC_MODE=mock
 ```
 
-### 3. Run migrations and start API
+### 3. One-command preflight + migrations
 
 ```bash
-alembic upgrade head
+python scripts/bootstrap_local.py
+```
+
+### 4. Start API
+
+```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 4. Generate local JWTs (dev)
+### 5. Generate local JWTs (dev)
 
 ```bash
 python - <<'PY'
@@ -108,7 +113,7 @@ SuretyBonding/
 
 ## Running Tests
 
-### Acceptance tests T1-T6
+### Acceptance tests S0 + T1-T6
 
 These tests currently validate contract behavior against the running API. Some tests require a real issued bond fixture and are intentionally skipped if required env vars are missing.
 
@@ -126,6 +131,7 @@ export PRE_APPROVED_CLAUSE_IDS='["uuid1","uuid2"]'    # For T5
 export ADMIN_APPROVAL_TOKEN=<admin-approval-token>    # For T6
 
 # Run individual tests
+pytest tests/acceptance/smoke/test_s0_bootstrap_smoke.py -m acceptance -v --timeout=60
 pytest tests/acceptance/manifest/test_t1_manifest_validation.py -m acceptance -v
 pytest tests/acceptance/notarization/test_t2_notarization_evidence.py -m acceptance -v
 pytest tests/acceptance/ledger/test_t3_ledger_proof.py -m acceptance -v
@@ -250,7 +256,7 @@ curl -X POST http://localhost:8000/api/v1/admin/signing-key-operation-requests/{
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | — | PostgreSQL connection string |
-| `JWT_SECRET` | `dev-secret` | JWT signing secret for API auth |
+| `JWT_SECRET` | `dev-secret-32-byte-minimum-secret-key` | JWT signing secret for API auth (use 32+ bytes) |
 | `JWT_ALGORITHM` | `HS256` | JWT algorithm |
 | `SIGNING_BACKEND` | `db_pem` | Signing custody backend: `db_pem` (dev fallback) or `mock_hsm` (no private key persistence) |
 | `ADMIN_APPROVAL_TOKEN` | `dev-approval-token` | Required dual-control token for key rotation/revocation actions |
@@ -298,6 +304,9 @@ docker push <registry>/ebonding:latest
 
 - **PRD:** [`SuretyBondingPRD.md`](./SuretyBondingPRD.md)
 - **Next Slice:** [`docs/next-slice.md`](./docs/next-slice.md)
+- **Ops Runbook:** [`docs/ops-runbook.md`](./docs/ops-runbook.md)
+- **Preflight Script:** [`scripts/preflight.py`](./scripts/preflight.py)
+- **Bootstrap Script:** [`scripts/bootstrap_local.py`](./scripts/bootstrap_local.py)
 - **Manifest Schema:** [`manifest.schema.json`](./manifest.schema.json)
 - **OpenAPI Spec:** [`openapi.yaml`](./openapi.yaml) — view at `/docs` when server is running
 - **Acceptance Tests:** [`tests/acceptance/`](./tests/acceptance/)

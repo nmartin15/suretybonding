@@ -9,6 +9,7 @@ Verifies:
   5. Notarization timestamp <= manifest issued_at.
 """
 
+import importlib.util
 import os
 from datetime import datetime
 
@@ -16,12 +17,7 @@ import pytest
 
 from tests.support.helpers import sha256_hex
 
-try:
-    from cryptography.x509 import load_pem_x509_certificate
-
-    HAS_CRYPTO = True
-except ImportError:
-    HAS_CRYPTO = False
+HAS_CRYPTO = importlib.util.find_spec("cryptography") is not None
 
 try:
     import boto3

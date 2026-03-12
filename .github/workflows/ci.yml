@@ -170,6 +170,9 @@ jobs:
       LEDGER_MODE: db_audit_log
       RON_MODE: mock
       KYC_MODE: mock
+      JWT_SECRET: dev-secret-32-byte-minimum-secret-key
+      ADMIN_APPROVAL_TOKEN: dev-approval-token
+      SIGNING_BACKEND: db_pem
 
     steps:
       - uses: actions/checkout@v4
@@ -187,6 +190,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r dev-requirements.txt
 
+      - name: Run preflight
+        run: python scripts/preflight.py
+
       - name: Run database migrations
         run: alembic upgrade head
 
@@ -200,6 +206,9 @@ jobs:
 
       - name: Ensure results directory exists
         run: mkdir -p results
+
+      - name: Run S0 — Bootstrap Smoke
+        run: pytest tests/acceptance/smoke/test_s0_bootstrap_smoke.py -m acceptance -v --timeout=60 --tb=long --junitxml=results/s0.xml
 
       - name: Run T1 — Manifest Validation
         run: pytest tests/acceptance/manifest/test_t1_manifest_validation.py -m acceptance -v --timeout=120 --tb=long --junitxml=results/t1.xml

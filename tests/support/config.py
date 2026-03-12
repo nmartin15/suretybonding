@@ -5,7 +5,7 @@ from pathlib import Path
 import jwt
 
 BASE_URL = os.getenv("EBONDING_API_URL", "http://localhost:8000")
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret")
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-32-byte-minimum-secret-key")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
 
