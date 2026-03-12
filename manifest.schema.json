@@ -1,0 +1,409 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebonding.example.com/schemas/manifest/1.0.0/manifest.schema.json",
+  "title": "WA Performance Bond Signed Manifest",
+  "description": "HSM-signed manifest binding a Washington public-works performance bond to signer identity, notarization evidence, clause provenance, and ledger proof. Conforms to PRD Section 5.6 (FR-06).",
+  "type": "object",
+  "required": [
+    "manifest_id",
+    "schema_version",
+    "bond_request_id",
+    "document_hash",
+    "clause_version_ids",
+    "rule_version_ids",
+    "principal_signer",
+    "notarization_meta",
+    "platform_signature",
+    "issued_at",
+    "jurisdiction",
+    "bond_type"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this manifest (UUID v4)."
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the manifest schema used to produce this document.",
+      "examples": ["1.0.0"]
+    },
+    "bond_request_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Reference to the originating bond request."
+    },
+    "document_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "Lowercase hex SHA-256 of the final signed bond PDF."
+    },
+    "clause_version_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "description": "Ordered list of clause_versions.id values included in the bond."
+    },
+    "rule_version_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_]+@\\d+$",
+        "description": "Format: rule_id@version, e.g. RCW_39_08_penal_sum@1"
+      },
+      "description": "All statutory/agency/carrier rule versions evaluated during issuance."
+    },
+    "principal_signer": {
+      "$ref": "#/$defs/PrincipalSigner"
+    },
+    "notarization_meta": {
+      "$ref": "#/$defs/NotarizationMeta"
+    },
+    "platform_signature": {
+      "$ref": "#/$defs/PlatformSignature"
+    },
+    "ledger_entry_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the record on the permissioned ledger. Present after ledger write."
+    },
+    "ledger_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of this manifest excluding platform_signature, ledger_entry_id, and ledger_hash fields. Must match the hash stored on the ledger."
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of bond issuance."
+    },
+    "jurisdiction": {
+      "type": "string",
+      "const": "WA",
+      "description": "Jurisdiction code. Fixed to 'WA' for V1."
+    },
+    "bond_type": {
+      "type": "string",
+      "const": "public_works_performance",
+      "description": "Bond type identifier. Fixed to 'public_works_performance' for V1."
+    },
+    "penal_sum": {
+      "type": "object",
+      "required": ["amount", "currency"],
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d{2}$",
+          "description": "Decimal string, e.g. '500000.00'. String to avoid floating-point issues."
+        },
+        "currency": {
+          "type": "string",
+          "const": "USD"
+        }
+      },
+      "description": "Penal sum of the bond. Must equal the contract amount per RCW 39.08."
+    },
+    "obligee": {
+      "type": "object",
+      "required": ["agency_name", "agency_id"],
+      "additionalProperties": false,
+      "properties": {
+        "agency_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agency_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "contract_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Agency contract number referenced by the bond."
+        }
+      },
+      "description": "Obligee (agency) details for the bond."
+    },
+    "carrier": {
+      "type": "object",
+      "required": ["carrier_name", "carrier_id"],
+      "additionalProperties": false,
+      "properties": {
+        "carrier_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "carrier_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "naic_code": {
+          "type": "string",
+          "pattern": "^\\d{5}$",
+          "description": "NAIC company code for the surety carrier."
+        }
+      },
+      "description": "Carrier (surety) that backs the bond."
+    }
+  },
+  "dependentRequired": {
+    "ledger_entry_id": ["ledger_hash"],
+    "ledger_hash": ["ledger_entry_id"]
+  },
+  "$defs": {
+    "PrincipalSigner": {
+      "type": "object",
+      "required": [
+        "name",
+        "email",
+        "kyc_pointer",
+        "signature_timestamp",
+        "signature_method"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full legal name of the principal signer."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address used for signing invitation."
+        },
+        "kyc_pointer": {
+          "$ref": "#/$defs/KycPointer"
+        },
+        "signature_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when the principal signed."
+        },
+        "signature_method": {
+          "type": "string",
+          "enum": ["e_sign", "wet_ink"],
+          "description": "How the principal signature was captured."
+        },
+        "e_sign_provider": {
+          "type": "string",
+          "description": "E-sign provider name (e.g. 'docusign', 'adobe_sign'). Present when signature_method is e_sign."
+        },
+        "e_sign_envelope_id": {
+          "type": "string",
+          "description": "Provider-specific envelope/transaction identifier."
+        }
+      },
+      "if": {
+        "properties": { "signature_method": { "const": "e_sign" } }
+      },
+      "then": {
+        "required": ["e_sign_provider", "e_sign_envelope_id"]
+      },
+      "description": "Identity and signature metadata for the bond principal."
+    },
+    "KycPointer": {
+      "type": "object",
+      "required": ["provider", "verification_id", "verified_at", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["persona", "plaid_identity", "manual"],
+          "description": "KYC verification provider."
+        },
+        "verification_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Provider-specific verification record ID. NOT PII."
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When KYC verification completed."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["verified", "manual_override"],
+          "description": "Outcome of KYC check. manual_override requires reviewer rationale in bond_request."
+        }
+      },
+      "description": "Reference to KYC verification record. Contains no PII—only provider and verification ID."
+    },
+    "NotarizationMeta": {
+      "type": "object",
+      "required": [
+        "notarization_type",
+        "notary_name",
+        "notary_commission_id",
+        "notary_state",
+        "notarization_timestamp"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "notarization_type": {
+          "type": "string",
+          "enum": ["ron", "wet_ink"],
+          "description": "Remote Online Notarization or traditional wet-ink."
+        },
+        "notary_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "notary_commission_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Notary commission number issued by the state."
+        },
+        "notary_state": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$",
+          "description": "Two-letter state code where the notary is commissioned."
+        },
+        "notary_certificate": {
+          "type": "object",
+          "required": ["issuer", "serial_number", "not_before", "not_after"],
+          "additionalProperties": false,
+          "properties": {
+            "issuer": {
+              "type": "string",
+              "description": "X.509 certificate issuer DN."
+            },
+            "serial_number": {
+              "type": "string",
+              "description": "Certificate serial number (hex)."
+            },
+            "not_before": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "not_after": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "fingerprint_sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "SHA-256 fingerprint of the notary certificate."
+            }
+          },
+          "description": "X.509 certificate metadata for the notary's digital certificate."
+        },
+        "ron_session_id": {
+          "type": "string",
+          "description": "RON provider session identifier. Required when notarization_type is ron."
+        },
+        "ron_video_pointer": {
+          "$ref": "#/$defs/S3Pointer",
+          "description": "Pointer to the RON audio/video recording in S3. Required when notarization_type is ron."
+        },
+        "scanned_pages_pointer": {
+          "$ref": "#/$defs/S3Pointer",
+          "description": "Pointer to scanned notarized pages. Required when notarization_type is wet_ink."
+        },
+        "notarization_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of notarization completion. Must be <= issued_at."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "notarization_type": { "const": "ron" } }
+          },
+          "then": {
+            "required": [
+              "notary_certificate",
+              "ron_session_id",
+              "ron_video_pointer"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "notarization_type": { "const": "wet_ink" } }
+          },
+          "then": {
+            "required": ["scanned_pages_pointer"]
+          }
+        }
+      ],
+      "description": "Notarization evidence. Conditional fields enforced by notarization_type."
+    },
+    "PlatformSignature": {
+      "type": "object",
+      "required": ["algorithm", "key_id", "signature", "certificate_chain", "signed_at"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": ["ECDSA-P256", "ECDSA-P384", "RSA-PSS-2048", "RSA-PSS-4096"],
+          "description": "Signing algorithm used by the platform HSM."
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "HSM key identifier used for this signature."
+        },
+        "signature": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "description": "Base64-encoded signature over the manifest payload (manifest JSON minus platform_signature and ledger fields)."
+        },
+        "certificate_chain": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "description": "PEM-encoded X.509 certificate. First element is the signing cert; last is the root CA."
+          },
+          "description": "Certificate chain from signing certificate to trusted root."
+        },
+        "signed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the HSM produced this signature."
+        }
+      },
+      "description": "Platform HSM signature over the manifest payload."
+    },
+    "S3Pointer": {
+      "type": "object",
+      "required": ["s3_uri", "checksum_sha256", "content_type", "size_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "s3_uri": {
+          "type": "string",
+          "pattern": "^s3://[a-z0-9][a-z0-9.\\-]{1,61}[a-z0-9]/.+$",
+          "description": "S3 URI (s3://bucket/key)."
+        },
+        "checksum_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 checksum of the referenced object."
+        },
+        "content_type": {
+          "type": "string",
+          "description": "MIME type of the referenced object (e.g. 'video/webm', 'application/pdf')."
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Size of the referenced object in bytes."
+        }
+      },
+      "description": "Pointer to an S3 object with integrity checksum."
+    }
+  }
+}

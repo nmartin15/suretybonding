@@ -1,0 +1,229 @@
+# .github/workflows/ci.yml
+# E-Bonding Platform CI — T1–T5 acceptance tests gate every merge to main.
+# PRD Section 9.4 / Section 10
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  EBONDING_API_URL: "http://localhost:8000"
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r dev-requirements.txt
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Mypy type check
+        run: mypy --ignore-missing-imports .
+
+      - name: Bandit security scan
+        run: bandit -r . -x ./tests --severity-level medium
+
+  validate-specs:
+    name: Validate Schemas & OpenAPI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install jsonschema pyyaml openapi-spec-validator
+
+      - name: Validate manifest.schema.json
+        run: |
+          python -c "
+          import json, jsonschema
+          with open('manifest.schema.json', encoding='utf-8') as f:
+              schema = json.load(f)
+          jsonschema.Draft202012Validator.check_schema(schema)
+          print('manifest.schema.json is valid.')
+          "
+
+      - name: Validate openapi.yaml
+        run: |
+          python -c "
+          import yaml
+          from openapi_spec_validator import validate_spec
+          with open('openapi.yaml', encoding='utf-8') as f:
+              spec = yaml.safe_load(f)
+          validate_spec(spec)
+          print('openapi.yaml is valid.')
+          "
+
+  unit-tests:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ebonding
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: ebonding_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://ebonding:testpass@localhost:5432/ebonding_test
+      REDIS_URL: redis://localhost:6379/0
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r dev-requirements.txt
+
+      - name: Run unit tests
+        run: |
+          pytest tests/ -m "not acceptance" -v --cov=. --cov-report=xml --timeout=120
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  acceptance-tests:
+    name: Acceptance Tests (T1–T5)
+    runs-on: ubuntu-latest
+    needs: [lint, validate-specs, unit-tests]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ebonding
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: ebonding_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://ebonding:testpass@localhost:5432/ebonding_test
+      REDIS_URL: redis://localhost:6379/0
+      HSM_MODE: softhsm
+      LEDGER_MODE: db_audit_log
+      RON_MODE: mock
+      KYC_MODE: mock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install SoftHSM
+        run: |
+          sudo apt-get update && sudo apt-get install -y softhsm2
+          softhsm2-util --init-token --slot 0 --label ebonding --pin 1234 --so-pin 5678
+
+      - name: Install dependencies
+        run: pip install -r dev-requirements.txt
+
+      - name: Run database migrations
+        run: alembic upgrade head
+
+      - name: Start application server
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/api/v1/health && break
+            sleep 2
+          done
+
+      - name: Ensure results directory exists
+        run: mkdir -p results
+
+      - name: Run T1 — Manifest Validation
+        run: pytest tests/acceptance/manifest/test_t1_manifest_validation.py -m acceptance -v --timeout=120 --tb=long --junitxml=results/t1.xml
+
+      - name: Run T2 — Notarization Evidence
+        run: pytest tests/acceptance/notarization/test_t2_notarization_evidence.py -m acceptance -v --timeout=120 --tb=long --junitxml=results/t2.xml
+
+      - name: Run T3 — Ledger Proof
+        run: pytest tests/acceptance/ledger/test_t3_ledger_proof.py -m acceptance -v --timeout=120 --tb=long --junitxml=results/t3.xml
+
+      - name: Run T4 — Litigation Simulation
+        run: pytest tests/acceptance/litigation/test_t4_litigation_simulation.py -m acceptance -v --timeout=600 --tb=long --junitxml=results/t4.xml
+
+      - name: Run T5 — Auto-Issue Policy Gate
+        run: pytest tests/acceptance/policy/test_t5_auto_issue.py -m acceptance -v --timeout=900 --tb=long --junitxml=results/t5.xml
+        env:
+          PRE_APPROVED_CLAUSE_IDS: ${{ secrets.PRE_APPROVED_CLAUSE_IDS }}
+
+      - name: Run T6 — Signing Key Dual Control
+        run: pytest tests/acceptance/security/test_t6_signing_key_dual_control.py -m acceptance -v --timeout=180 --tb=long --junitxml=results/t6.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-test-results
+          path: results/

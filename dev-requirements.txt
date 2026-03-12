@@ -1,0 +1,30 @@
+# E-Bonding Platform — Development & CI Dependencies
+
+-r requirements.txt
+
+# Testing
+pytest>=8.1,<9.0
+pytest-asyncio>=0.23,<1.0
+pytest-cov>=5.0,<6.0
+pytest-timeout>=2.3,<3.0
+pytest-xdist>=3.5,<4.0       # Parallel test execution
+requests>=2.31,<3.0           # Used by acceptance tests (T1–T5)
+
+# Linting & formatting
+ruff>=0.4,<1.0
+mypy>=1.10,<2.0
+
+# OpenAPI validation
+openapi-spec-validator>=0.7,<1.0
+pyyaml>=6.0,<7.0
+
+# Security scanning
+bandit>=1.7,<2.0
+safety>=3.1,<4.0
+
+# Database testing
+factory-boy>=3.3,<4.0
+faker>=25.0,<26.0
+
+# Local development
+pre-commit>=3.7,<4.0

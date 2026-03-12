@@ -1,0 +1,1521 @@
+openapi: 3.1.0
+info:
+  title: WA Performance Bond E-Bonding Platform
+  version: 1.0.0
+  description: |
+    API for issuing court-defensible Washington State public-works performance bonds.
+    Produces HSM-signed manifests and exportable audit bundles per PRD v2.0.
+  contact:
+    name: E-Bonding Platform Team
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.ebonding.example.com
+    description: Production
+  - url: https://api.staging.ebonding.example.com
+    description: Staging
+  - url: http://localhost:8000
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Bonds
+    description: Bond request lifecycle (PRD Section 7.1)
+  - name: Manifests
+    description: Manifest retrieval and verification (PRD Section 7.2)
+  - name: Audit Bundles
+    description: Audit bundle export (PRD Section 7.2)
+  - name: Clauses
+    description: Clause registry management (PRD Section 7.3)
+  - name: Health
+    description: Operational health checks
+
+paths:
+  # ──────────────────────────────────────────────
+  # Bond Request Lifecycle (PRD 7.1)
+  # ──────────────────────────────────────────────
+  /api/v1/bonds:
+    post:
+      operationId: createBondRequest
+      summary: Create a new bond request
+      description: |
+        Creates a bond request in `draft` status. The intake payload is validated
+        against the WA-specific intake schema (FR-01). Attachments are uploaded
+        separately via the attachments endpoint.
+      tags: [Bonds]
+      x-roles: [broker]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBondRequest"
+      responses:
+        "201":
+          description: Bond request created in draft status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BondRequest"
+          headers:
+            Location:
+              schema:
+                type: string
+              description: URI of the created bond request.
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: |
+            Duplicate bond request. A non-rejected request already exists for
+            this principal + contract + agency tuple (PRD Section 11).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      operationId: listBondRequests
+      summary: List bond requests
+      description: |
+        Returns bond requests filtered by the caller's role permissions.
+        Brokers see their own requests. Underwriters and legal see all.
+        Obligees see requests for their agency. Supports pagination and status filtering.
+      tags: [Bonds]
+      x-roles: [broker, underwriter, legal, obligee, admin]
+      parameters:
+        - $ref: "#/components/parameters/StatusFilter"
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSize"
+        - name: obligee_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by obligee agency ID.
+        - name: principal_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by principal ID.
+      responses:
+        "200":
+          description: Paginated list of bond requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BondRequestList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /api/v1/bonds/{bond_id}:
+    parameters:
+      - $ref: "#/components/parameters/BondId"
+
+    get:
+      operationId: getBondRequest
+      summary: Retrieve a bond request
+      description: Returns the bond request with its current status, status history, and review card data if applicable.
+      tags: [Bonds]
+      x-roles: [broker(own), underwriter, legal, obligee(own_agency)]
+      responses:
+        "200":
+          description: Bond request details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BondRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      operationId: updateBondRequest
+      summary: Update a draft bond request
+      description: |
+        Partial update of a bond request. Only allowed when status is `draft`.
+        Merge semantics: provided fields overwrite, omitted fields are unchanged.
+      tags: [Bonds]
+      x-roles: [broker(own)]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBondRequest"
+      responses:
+        "200":
+          description: Updated bond request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BondRequest"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Bond request is not in `draft` status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/bonds/{bond_id}/submit:
+    parameters:
+      - $ref: "#/components/parameters/BondId"
+    post:
+      operationId: submitBondRequest
+      summary: Submit a draft for evaluation
+      description: |
+        Transitions the bond request from `draft` to `submitted`. Triggers
+        intake validation, hybrid discovery (FR-03), deterministic rule
+        evaluation (FR-04), and auto-issue assessment (FR-05/T5).
+
+        Synchronously validates the intake payload. Rule evaluation and
+        clause discovery run asynchronously — poll the bond status or
+        subscribe to webhooks for completion.
+      tags: [Bonds]
+      x-roles: [broker(own)]
+      responses:
+        "202":
+          description: |
+            Submission accepted. Bond transitions to `submitted` and evaluation
+            begins asynchronously.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BondRequest"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Bond request is not in `draft` status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/bonds/{bond_id}/review:
+    parameters:
+      - $ref: "#/components/parameters/BondId"
+    post:
+      operationId: submitReviewDecision
+      summary: Submit a review decision
+      description: |
+        Approve, reject, or request additional information for a bond in
+        `review_required` status (PRD Section 4.3). Rationale is required
+        for reject and clause substitution actions.
+      tags: [Bonds]
+      x-roles: [underwriter, legal]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewDecision"
+      responses:
+        "200":
+          description: Review decision recorded. Bond transitions to next state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BondRequest"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Bond request is not in `review_required` status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/bonds/{bond_id}/review-card:
+    parameters:
+      - $ref: "#/components/parameters/BondId"
+    get:
+      operationId: getReviewCard
+      summary: Get review card data
+      description: |
+        Returns the review card for a bond in `review_required` status.
+        Includes clause diffs, delta risk analysis, precedent history,
+        and rule failure details (FR-09).
+      tags: [Bonds]
+      x-roles: [underwriter, legal]
+      responses:
+        "200":
+          description: Review card data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewCard"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/bonds/{bond_id}/sign:
+    parameters:
+      - $ref: "#/components/parameters/BondId"
+    post:
+      operationId: triggerSigning
+      summary: Trigger the signing flow
+      description: |
+        Initiates the e-sign flow for the principal. Bond must be in
+        `auto_approved` or `approved` status. Sends signing invitation
+        via the configured e-sign provider.
+      tags: [Bonds]
+      x-roles: [broker(own)]
+      responses:
+        "202":
+          description: Signing flow initiated. Bond transitions to `signing`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BondRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Bond is not in a signable state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/bonds/{bond_id}/attachments:
+    parameters:
+      - $ref: "#/components/parameters/BondId"
+    post:
+      operationId: uploadAttachment
+      summary: Upload an attachment to a bond request
+      description: |
+        Upload a file attachment (contract PDF, financial statement, etc.)
+        to a bond request in `draft` or `info_requested` status.
+        Files are virus-scanned and checksummed on upload.
+      tags: [Bonds]
+      x-roles: [broker(own)]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, document_type]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload (max 50 MB).
+                document_type:
+                  type: string
+                  enum:
+                    - executed_contract
+                    - financial_statement
+                    - sos_filing
+                    - agency_required
+                    - other
+                  description: Classification of the uploaded document.
+                description:
+                  type: string
+                  maxLength: 500
+      responses:
+        "201":
+          description: Attachment uploaded and checksummed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attachment"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Bond is not in a state that accepts uploads.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: File exceeds 50 MB size limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/bonds/{bond_id}/pdf:
+    parameters:
+      - $ref: "#/components/parameters/BondId"
+    get:
+      operationId: downloadBondPdf
+      summary: Download issued bond PDF
+      description: |
+        Returns the final signed bond PDF for an issued bond request.
+        This endpoint is used by evidence validation workflows (T1/T4).
+      tags: [Bonds]
+      x-roles: [broker(own), underwriter, legal, obligee(own_agency), admin]
+      responses:
+        "200":
+          description: Signed bond PDF.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: 'attachment; filename="bond-{bond_id}.pdf"'
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ──────────────────────────────────────────────
+  # Manifests & Audit Bundles (PRD 7.2)
+  # ──────────────────────────────────────────────
+  /api/v1/manifests/{manifest_id}:
+    parameters:
+      - $ref: "#/components/parameters/ManifestId"
+    get:
+      operationId: getManifest
+      summary: Retrieve a manifest
+      description: Returns the full HSM-signed manifest JSON for an issued bond.
+      tags: [Manifests]
+      x-roles: [broker(own), underwriter, legal, obligee(own_agency), admin]
+      responses:
+        "200":
+          description: Manifest JSON.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Manifest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/manifests/{manifest_id}/verify:
+    parameters:
+      - $ref: "#/components/parameters/ManifestId"
+    get:
+      operationId: verifyManifest
+      summary: Verify manifest signature and ledger proof
+      description: |
+        Runs T1 (manifest validation) and T3 (ledger proof) checks against
+        the manifest. Returns structured verification results.
+      tags: [Manifests]
+      x-roles: [broker, underwriter, legal, obligee, admin]
+      responses:
+        "200":
+          description: Verification results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationResult"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/audit-bundles/{manifest_id}:
+    parameters:
+      - $ref: "#/components/parameters/ManifestId"
+    get:
+      operationId: downloadAuditBundle
+      summary: Download an audit bundle
+      description: |
+        Returns the audit bundle ZIP for an issued bond. Contains: bond PDF,
+        manifest JSON, notarization evidence, KYC pointer, ledger proof,
+        legal memo, clause lineage, and rule evaluation log (FR-10).
+      tags: [Audit Bundles]
+      x-roles: [underwriter, legal, obligee(own_agency), admin]
+      responses:
+        "200":
+          description: Audit bundle ZIP archive.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: 'attachment; filename="audit-bundle-{manifest_id}.zip"'
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/audit-bundles/{manifest_id}/generate:
+    parameters:
+      - $ref: "#/components/parameters/ManifestId"
+    post:
+      operationId: generateAuditBundle
+      summary: Trigger audit bundle regeneration
+      description: |
+        Regenerates the audit bundle for an issued bond. Used for T4 testing
+        and when underlying evidence has been updated. Must complete within
+        5 minutes (PRD success metric).
+      tags: [Audit Bundles]
+      x-roles: [admin]
+      responses:
+        "202":
+          description: Bundle generation initiated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [manifest_id, status, estimated_completion]
+                properties:
+                  manifest_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [generating]
+                  estimated_completion:
+                    type: string
+                    format: date-time
+                    description: Estimated time of completion (within 5 minutes).
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ──────────────────────────────────────────────
+  # Clause Registry (PRD 7.3)
+  # ──────────────────────────────────────────────
+  /api/v1/clauses:
+    get:
+      operationId: listClauses
+      summary: List clauses with filtering
+      description: |
+        Returns clause records filtered by jurisdiction, bond type, carrier
+        approval status, and effective date. Supports pagination.
+      tags: [Clauses]
+      x-roles: [underwriter, legal, admin]
+      parameters:
+        - name: jurisdiction
+          in: query
+          schema:
+            type: string
+          example: WA
+        - name: bond_type
+          in: query
+          schema:
+            type: string
+          example: public_works_performance
+        - name: carrier_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter to clauses approved by this carrier.
+        - name: effective_on
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Filter to clauses effective on this date.
+        - name: include_superseded
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include superseded clause versions in results.
+        - $ref: "#/components/parameters/PageCursor"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Paginated list of clauses.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClauseList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createClause
+      summary: Create a new clause or new version
+      description: |
+        Creates a new clause record. If `clause_id` is provided, creates a new
+        version of an existing clause (the previous version is marked superseded).
+        If omitted, creates an entirely new clause. Text hash (SHA-256) is computed
+        server-side.
+      tags: [Clauses]
+      x-roles: [legal, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClause"
+      responses:
+        "201":
+          description: Clause version created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClauseVersion"
+          headers:
+            Location:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/clauses/{clause_id}/versions:
+    parameters:
+      - name: clause_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getClauseVersions
+      summary: Get version history for a clause
+      description: Returns all versions of a clause ordered by version number descending.
+      tags: [Clauses]
+      x-roles: [underwriter, legal, admin]
+      responses:
+        "200":
+          description: Clause version history.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clause_id, versions]
+                properties:
+                  clause_id:
+                    type: string
+                    format: uuid
+                  versions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ClauseVersion"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/clauses/{clause_version_id}/approve:
+    parameters:
+      - name: clause_version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The specific clause version to approve.
+    post:
+      operationId: approveClauseVersion
+      summary: Record carrier approval token
+      description: |
+        Records that the caller's carrier has approved this clause version
+        for use in bonds matching the given scope. Approval is recorded as
+        a signed token (FR-02).
+      tags: [Clauses]
+      x-roles: [underwriter]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClauseApproval"
+      responses:
+        "200":
+          description: Approval token recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClauseVersion"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: This carrier has already approved this clause version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/clauses/discover:
+    post:
+      operationId: discoverClauses
+      summary: Hybrid discovery (vector search + metadata gating)
+      description: |
+        Internal service endpoint. Runs vector similarity search to find
+        candidate clauses, then applies deterministic metadata gating (FR-03).
+        Returns ranked candidates with confidence scores and gating results.
+      tags: [Clauses]
+      x-roles: [internal_service]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoveryRequest"
+      responses:
+        "200":
+          description: Discovery results with gating outcomes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryResult"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ──────────────────────────────────────────────
+  # Health
+  # ──────────────────────────────────────────────
+  /api/v1/health:
+    get:
+      operationId: healthCheck
+      summary: Platform health check
+      description: Returns health status of the platform and its dependencies.
+      tags: [Health]
+      security: []
+      responses:
+        "200":
+          description: All systems healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: One or more dependencies unhealthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+# ════════════════════════════════════════════════
+# Components
+# ════════════════════════════════════════════════
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT with role claims. Roles: broker, underwriter, legal, obligee, admin.
+        See PRD Section 12 for the authorization matrix.
+
+  parameters:
+    BondId:
+      name: bond_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ManifestId:
+      name: manifest_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    StatusFilter:
+      name: status
+      in: query
+      schema:
+        type: string
+        enum:
+          - draft
+          - submitted
+          - auto_approved
+          - review_required
+          - info_requested
+          - approved
+          - signing
+          - signed
+          - notarizing
+          - notarization_failed
+          - wet_ink_fallback
+          - notarized
+          - issued
+          - rejected
+          - expired
+      description: Filter by bond request status (PRD Section 4.4).
+
+    PageCursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+      description: Opaque cursor for keyset pagination. Omit for first page.
+
+    PageSize:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+
+  responses:
+    ValidationError:
+      description: Request body failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Unauthenticated:
+      description: Missing or invalid authentication token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Unauthorized:
+      description: Authenticated but insufficient permissions for this action.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    # ── Error ──
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code.
+              examples:
+                - VALIDATION_FAILED
+                - RULE_CHECK_FAILED
+                - STATE_CONFLICT
+                - NOT_FOUND
+            message:
+              type: string
+              description: Human-readable error message.
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  reason:
+                    type: string
+                  citation:
+                    type: string
+                    description: Statutory or rule citation if applicable.
+            request_id:
+              type: string
+              format: uuid
+              description: Unique request ID for support and SIEM correlation.
+
+    # ── Bond Request ──
+    CreateBondRequest:
+      type: object
+      required:
+        - principal_name
+        - principal_ubi_number
+        - contractor_registration_number
+        - obligee_agency_id
+        - contract_id
+        - contract_amount
+        - penal_sum
+        - project_description
+        - project_county
+      properties:
+        principal_name:
+          type: string
+          minLength: 1
+          description: Full legal name of the principal (contractor).
+        principal_ubi_number:
+          type: string
+          pattern: "^\\d{9}$"
+          description: Washington Unified Business Identifier (9 digits).
+        contractor_registration_number:
+          type: string
+          minLength: 1
+          description: WA Department of Labor & Industries contractor registration.
+        obligee_agency_id:
+          type: string
+          format: uuid
+          description: ID of the obligee agency.
+        contract_id:
+          type: string
+          minLength: 1
+          description: Agency contract number.
+        contract_amount:
+          type: string
+          pattern: "^\\d+\\.\\d{2}$"
+          description: Contract amount as decimal string.
+        penal_sum:
+          type: string
+          pattern: "^\\d+\\.\\d{2}$"
+          description: Penal sum as decimal string. Must equal contract_amount for WA public works (RCW 39.08).
+        project_description:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        project_county:
+          type: string
+          minLength: 1
+          description: Washington county where the project is located.
+        carrier_id:
+          type: string
+          format: uuid
+          description: Preferred carrier. Defaults to pilot carrier if omitted.
+        additional_data:
+          type: object
+          additionalProperties: true
+          description: Agency-specific fields beyond the core schema.
+
+    UpdateBondRequest:
+      type: object
+      description: Partial update. Only provided fields are modified.
+      properties:
+        principal_name:
+          type: string
+        principal_ubi_number:
+          type: string
+        contractor_registration_number:
+          type: string
+        contract_id:
+          type: string
+        contract_amount:
+          type: string
+          pattern: "^\\d+\\.\\d{2}$"
+        penal_sum:
+          type: string
+          pattern: "^\\d+\\.\\d{2}$"
+        project_description:
+          type: string
+        project_county:
+          type: string
+        additional_data:
+          type: object
+          additionalProperties: true
+
+    BondRequest:
+      type: object
+      required: [id, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        principal_id:
+          type: string
+          format: uuid
+        broker_id:
+          type: string
+          format: uuid
+        obligee_id:
+          type: string
+          format: uuid
+        carrier_id:
+          type: string
+          format: uuid
+        penal_sum:
+          type: string
+        contract_id:
+          type: string
+        contract_amount:
+          type: string
+        project_description:
+          type: string
+        project_county:
+          type: string
+        selected_clause_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        status:
+          type: string
+          enum:
+            - draft
+            - submitted
+            - auto_approved
+            - review_required
+            - info_requested
+            - approved
+            - signing
+            - signing_failed
+            - signed
+            - kyc_failed
+            - notarizing
+            - notarization_failed
+            - wet_ink_fallback
+            - notarized
+            - issued
+            - rejected
+            - expired
+        status_history:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusTransition"
+        manifest_id:
+          type: string
+          format: uuid
+          description: Present when status is `issued`.
+        rule_evaluation_summary:
+          $ref: "#/components/schemas/RuleEvaluationSummary"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BondRequestList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BondRequest"
+        next_cursor:
+          type: string
+          nullable: true
+          description: Cursor for the next page. Null if no more results.
+        total_count:
+          type: integer
+          description: Total matching records (optional, may be omitted for performance).
+
+    StatusTransition:
+      type: object
+      required: [status, actor_id, timestamp]
+      properties:
+        status:
+          type: string
+        actor_id:
+          type: string
+          format: uuid
+        actor_role:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        rationale:
+          type: string
+          description: Required for reject and clause substitution actions.
+
+    # ── Review ──
+    ReviewDecision:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [approve, reject, request_info, substitute_clauses]
+        rationale:
+          type: string
+          minLength: 1
+          description: Required when action is `reject` or `substitute_clauses`.
+        substitute_clause_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Required when action is `substitute_clauses`. New clause version IDs to use.
+        requested_documents:
+          type: array
+          items:
+            type: string
+          description: Document types requested when action is `request_info`.
+      # Conditional requirements
+      allOf:
+        - if:
+            properties:
+              action:
+                enum: [reject, substitute_clauses]
+          then:
+            required: [rationale]
+        - if:
+            properties:
+              action:
+                const: substitute_clauses
+          then:
+            required: [substitute_clause_ids]
+
+    ReviewCard:
+      type: object
+      required: [bond_id, flags, created_at]
+      properties:
+        bond_id:
+          type: string
+          format: uuid
+        flags:
+          type: array
+          items:
+            type: object
+            required: [flag_type, description]
+            properties:
+              flag_type:
+                type: string
+                enum:
+                  - low_clause_confidence
+                  - exposure_exceeds_limit
+                  - statutory_rule_ambiguity
+                  - missing_carrier_approval
+                  - insufficient_approved_clauses
+              description:
+                type: string
+              citation:
+                type: string
+              details:
+                type: object
+                additionalProperties: true
+        clause_diffs:
+          type: array
+          items:
+            type: object
+            properties:
+              selected_clause_version_id:
+                type: string
+                format: uuid
+              nearest_approved_version_id:
+                type: string
+                format: uuid
+              diff_summary:
+                type: string
+              similarity_score:
+                type: number
+                minimum: 0
+                maximum: 1
+        delta_risk:
+          type: object
+          description: Risk comparison against historical approvals.
+          additionalProperties: true
+        precedent_bonds:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            properties:
+              bond_request_id:
+                type: string
+                format: uuid
+              similarity_score:
+                type: number
+              penal_sum:
+                type: string
+              issued_at:
+                type: string
+                format: date-time
+        sla_deadline:
+          type: string
+          format: date-time
+          description: Review SLA deadline (default 4 business hours from creation).
+        created_at:
+          type: string
+          format: date-time
+
+    RuleEvaluationSummary:
+      type: object
+      properties:
+        overall_result:
+          type: string
+          enum: [pass, fail, review_required]
+        rules_evaluated:
+          type: integer
+        rules_passed:
+          type: integer
+        rules_failed:
+          type: integer
+        failures:
+          type: array
+          items:
+            type: object
+            properties:
+              rule_id:
+                type: string
+              version:
+                type: integer
+              tier:
+                type: string
+                enum: [statutory, agency, carrier]
+              description:
+                type: string
+              citation:
+                type: string
+        confidence_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Overall clause selection confidence. Below 0.85 triggers review.
+
+    # ── Attachment ──
+    Attachment:
+      type: object
+      required: [id, filename, document_type, checksum_sha256, uploaded_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        document_type:
+          type: string
+        size_bytes:
+          type: integer
+        content_type:
+          type: string
+        checksum_sha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        uploaded_at:
+          type: string
+          format: date-time
+
+    # ── Manifest ──
+    Manifest:
+      type: object
+      description: |
+        Full manifest JSON per manifest.schema.json. See the JSON Schema
+        for authoritative field definitions.
+      required: [manifest_id, schema_version, bond_request_id, document_hash, issued_at]
+      additionalProperties: true
+      properties:
+        manifest_id:
+          type: string
+          format: uuid
+        schema_version:
+          type: string
+        bond_request_id:
+          type: string
+          format: uuid
+        document_hash:
+          type: string
+        issued_at:
+          type: string
+          format: date-time
+
+    VerificationResult:
+      type: object
+      required: [manifest_id, checks, overall_result, verified_at]
+      properties:
+        manifest_id:
+          type: string
+          format: uuid
+        checks:
+          type: array
+          items:
+            type: object
+            required: [check, result]
+            properties:
+              check:
+                type: string
+                enum:
+                  - document_hash_match
+                  - schema_valid
+                  - platform_signature_valid
+                  - certificate_chain_valid
+                  - ledger_hash_match
+                  - ledger_timestamp_valid
+              result:
+                type: string
+                enum: [pass, fail, skipped]
+              detail:
+                type: string
+        overall_result:
+          type: string
+          enum: [pass, fail]
+        verified_at:
+          type: string
+          format: date-time
+
+    # ── Clause ──
+    CreateClause:
+      type: object
+      required: [jurisdiction, bond_type, text, effective_date]
+      properties:
+        clause_id:
+          type: string
+          format: uuid
+          description: Omit to create a new clause. Provide to create a new version of an existing clause.
+        jurisdiction:
+          type: string
+          examples: ["WA"]
+        bond_type:
+          type: string
+          examples: ["public_works_performance"]
+        text:
+          type: string
+          minLength: 1
+          description: Full clause text. Server computes text_hash (SHA-256).
+        effective_date:
+          type: string
+          format: date
+        expiration_date:
+          type: string
+          format: date
+          nullable: true
+
+    ClauseVersion:
+      type: object
+      required: [id, clause_id, version, jurisdiction, bond_type, text_hash, effective_date, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Immutable clause version ID.
+        clause_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        jurisdiction:
+          type: string
+        bond_type:
+          type: string
+        text:
+          type: string
+          description: Full clause text. May be omitted in list responses (use versions endpoint for full text).
+        text_hash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        effective_date:
+          type: string
+          format: date
+        expiration_date:
+          type: string
+          format: date
+          nullable: true
+        superseded_by:
+          type: string
+          format: uuid
+          nullable: true
+        carrier_approval_tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/CarrierApprovalToken"
+        created_at:
+          type: string
+          format: date-time
+
+    ClauseList:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClauseVersion"
+        next_cursor:
+          type: string
+          nullable: true
+
+    ClauseApproval:
+      type: object
+      required: [approval_scope]
+      properties:
+        approval_scope:
+          type: string
+          minLength: 1
+          description: |
+            Human-readable scope of approval, e.g.
+            "WA public works performance, penal sum up to $5M".
+        notes:
+          type: string
+          description: Optional notes from the underwriter.
+
+    CarrierApprovalToken:
+      type: object
+      required: [carrier_id, approved_at, approved_by, approval_scope]
+      properties:
+        carrier_id:
+          type: string
+          format: uuid
+        approved_at:
+          type: string
+          format: date-time
+        approved_by:
+          type: string
+          format: uuid
+          description: User ID of the underwriter who approved.
+        approval_scope:
+          type: string
+
+    # ── Discovery ──
+    DiscoveryRequest:
+      type: object
+      required: [bond_request_id, jurisdiction, bond_type, carrier_id]
+      properties:
+        bond_request_id:
+          type: string
+          format: uuid
+        jurisdiction:
+          type: string
+        bond_type:
+          type: string
+        carrier_id:
+          type: string
+          format: uuid
+        context_text:
+          type: string
+          description: Free text for vector similarity search (project description, etc.).
+        max_candidates:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+
+    DiscoveryResult:
+      type: object
+      required: [bond_request_id, candidates, overall_confidence]
+      properties:
+        bond_request_id:
+          type: string
+          format: uuid
+        candidates:
+          type: array
+          items:
+            type: object
+            required: [clause_version_id, similarity_score, gating_result]
+            properties:
+              clause_version_id:
+                type: string
+                format: uuid
+              similarity_score:
+                type: number
+                minimum: 0
+                maximum: 1
+              gating_result:
+                type: string
+                enum: [passed, failed]
+              gating_failures:
+                type: array
+                items:
+                  type: string
+                description: Reasons for gating failure, if any.
+        selected_clause_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Clause version IDs that passed both discovery and gating.
+        overall_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Aggregate confidence score. Below 0.85 triggers review.
+
+    # ── Health ──
+    HealthStatus:
+      type: object
+      required: [status, checks, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        checks:
+          type: object
+          properties:
+            database:
+              $ref: "#/components/schemas/DependencyHealth"
+            hsm:
+              $ref: "#/components/schemas/DependencyHealth"
+            ledger:
+              $ref: "#/components/schemas/DependencyHealth"
+            ron_provider:
+              $ref: "#/components/schemas/DependencyHealth"
+            vector_db:
+              $ref: "#/components/schemas/DependencyHealth"
+            object_storage:
+              $ref: "#/components/schemas/DependencyHealth"
+        timestamp:
+          type: string
+          format: date-time
+
+    DependencyHealth:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [up, down, degraded]
+        latency_ms:
+          type: integer
+        detail:
+          type: string
